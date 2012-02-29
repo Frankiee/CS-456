@@ -109,7 +109,7 @@ public class receiver {
 
         try {
             // Check if the input format is valid, otherwise print usage description
-            if (args.length <= 4) {
+            if (args.length < 4) {
                String str = "Usage:\n"
                    + "\tjava receiver | <arguments>\n\n"
                    + "<arguments>:\n"

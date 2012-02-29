@@ -104,9 +104,13 @@ public class sender implements Runnable {
 
                     // Update scheduled retransmitting task
                     if (base == nextSeqNum) {
+                    	System.out.println("cancel the task@ run");
                         retransmitTimer.cancelTask();
+                        
                     } else {
+                    	System.out.println("reschedule the task@ run()");
                         retransmitTimer.reschedule();
+                        
                     }
 
                     // base is changed, sender can continue sending packets
@@ -124,7 +128,8 @@ public class sender implements Runnable {
                 }
             }
         } catch (Exception ex) {
-            System.out.println("sender: Received packet corrupted:" + ex.getMessage());
+            System.out.println("sender: Received packet corrupted:" + ex.getMessage()+ "\n");
+            ex.printStackTrace();
         }
 
         // close monitoring and transmitting socket
@@ -153,21 +158,25 @@ public class sender implements Runnable {
 
         public void reschedule() {
             cancelTask();
-            timer.schedule(this, countDownDelay);
+        	System.out.println("reschedule the task@ reschedule()");
+            timer.schedule(new UnacknowledgedPacketsRetransmitTimer(), countDownDelay);  //Jason
         }
 
         public void cancelTask() {
-            cancel();
-            timer.cancel();
+        	System.out.println("@cancelTask(): canceling1");
+        	cancel();
+            System.out.println("@cancelTask(): canceling2");
+            //timer.cancel();
         }
 
         public void run() {
             // resend all unacknowledged packet
+        	System.out.println("@unack timertask run(), see how many times it runs");
             for(Map.Entry<Integer, packet> unacknowledgedPacket : unacknowledgedPacketsCache.entrySet()) {
                 try {
                     fileTransmitter.sendPacket(unacknowledgedPacket.getValue());
                 } catch (IOException ex) {
-                    System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error" + ex.getMessage());
+                    System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error " + ex.getMessage());
                 }
             }
         }
@@ -177,7 +186,7 @@ public class sender implements Runnable {
 
         try {
             // Check if the input format is valid, otherwise print usage description
-            if (args.length <= 4) {
+            if (args.length < 4) {
                String str = "Usage:\n"
                        + "\tjava sender | <arguments>\n\n"
                        + "<arguments>:\n"
