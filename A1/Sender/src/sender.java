@@ -26,7 +26,7 @@ public class sender implements Runnable {
 
     private final int ACKorEOTPacketLength = 12;
 
-    private FileTransmitter fileTransporter;
+    private FileTransmitter fileTransmitter;
 
     private final int windowSize = 10;
     private int nextSeqNum = 0;
@@ -39,7 +39,7 @@ public class sender implements Runnable {
     private Thread ACKMonitoringThread;
 
     private sender (FileTransmitter transp, int mtPort) throws SocketException {
-        fileTransporter = transp;
+        fileTransmitter = transp;
 
         monitoringSocket = new DatagramSocket(mtPort);
 
@@ -56,16 +56,16 @@ public class sender implements Runnable {
     }
 
     private void startFileTransmitting() throws InterruptedException, IOException, Exception {
-        while (!fileTransporter.getIsFinished()) {
+        while (!fileTransmitter.getIsFinished()) {
             synchronized (mux) {
                 if (nextSeqNum < base + windowSize) {
                     // read next chuck of file and create packet wrapper
-                    packet pkt = fileTransporter.readNextPacketFromFile(nextSeqNum);
+                    packet pkt = fileTransmitter.readNextPacketFromFile(nextSeqNum);
                     // push it to unacknowledged packets cache
                     unacknowledgedPacketsCache.put(new Integer(nextSeqNum), pkt);
 
                     // send packet
-                    fileTransporter.sendPacket(pkt);
+                    fileTransmitter.sendPacket(pkt);
 
                     // reset count down timer
                     if (base == nextSeqNum)
@@ -129,7 +129,7 @@ public class sender implements Runnable {
 
         // close monitoring and transmitting socket
         monitoringSocket.close();
-        fileTransporter.closeTransmitterSocket();
+        fileTransmitter.closeTransmitterSocket();
     }
 
     private int getSeqNumFromPacketSeqNum(int packetSeqNum) {
@@ -139,7 +139,7 @@ public class sender implements Runnable {
 
     private boolean shouldFinishMonitoring() {
         synchronized (mux) {
-            return fileTransporter.getIsFinished() && nextSeqNum == base;
+            return fileTransmitter.getIsFinished() && nextSeqNum == base;
         }
     }
 
@@ -165,7 +165,7 @@ public class sender implements Runnable {
             // resend all unacknowledged packet
             for(Map.Entry<Integer, packet> unacknowledgedPacket : unacknowledgedPacketsCache.entrySet()) {
                 try {
-                    fileTransporter.sendPacket(unacknowledgedPacket.getValue());
+                    fileTransmitter.sendPacket(unacknowledgedPacket.getValue());
                 } catch (IOException ex) {
                     System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error" + ex.getMessage());
                 }
