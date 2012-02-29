@@ -54,6 +54,9 @@ public class receiver {
                 if (expectedSeqNum != 0)
                     sendPacket(lastSentInOrderACKPacket);
             } else {
+            	// for debug
+                System.out.println("receiver: packet " + rcvPacket.getSeqNum() + " received");
+                
                 if (rcvPacket.getType() == 1) {
                     // update last-sent-in-order ACK packet
                     lastSentInOrderACKPacket = packet.createACK(expectedSeqNum++);
@@ -63,6 +66,9 @@ public class receiver {
                     
                     // send last-sent-in-order ACK packet
                     sendPacket(lastSentInOrderACKPacket);
+                    
+                    // for debug
+                    System.out.println("receiver: packet " + lastSentInOrderACKPacket.getSeqNum() + " send");
                 } else if (rcvPacket.getType() == 2) {
                     sendPacket(rcvPacket);
                     break;

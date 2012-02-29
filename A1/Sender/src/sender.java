@@ -26,7 +26,7 @@ public class sender implements Runnable {
 
     private final int ACKorEOTPacketLength = 12;
 
-    private FileTransmitter fileTransmitter;
+    private FileTransmitter fileTransporter;
 
     private final int windowSize = 10;
     private int nextSeqNum = 0;
@@ -39,7 +39,7 @@ public class sender implements Runnable {
     private Thread ACKMonitoringThread;
 
     private sender (FileTransmitter transp, int mtPort) throws SocketException {
-        fileTransmitter = transp;
+        fileTransporter = transp;
 
         monitoringSocket = new DatagramSocket(mtPort);
 
@@ -56,16 +56,16 @@ public class sender implements Runnable {
     }
 
     private void startFileTransmitting() throws InterruptedException, IOException, Exception {
-        while (!fileTransmitter.getIsFinished()) {
+        while (!fileTransporter.getIsFinished()) {
             synchronized (mux) {
                 if (nextSeqNum < base + windowSize) {
                     // read next chuck of file and create packet wrapper
-                    packet pkt = fileTransmitter.readNextPacketFromFile(nextSeqNum);
+                    packet pkt = fileTransporter.readNextPacketFromFile(nextSeqNum);
                     // push it to unacknowledged packets cache
                     unacknowledgedPacketsCache.put(new Integer(nextSeqNum), pkt);
 
                     // send packet
-                    fileTransmitter.sendPacket(pkt);
+                    fileTransporter.sendPacket(pkt);
 
                     // reset count down timer
                     if (base == nextSeqNum)
@@ -99,6 +99,9 @@ public class sender implements Runnable {
                 for (int i = base; i <= receivedPacketSeqNum; i++)
                     unacknowledgedPacketsCache.remove(new Integer(i));
 
+                // for debug
+                System.out.println("Sender: Packet Sequence " + receivedPacketSeqNum + "received, type: " + receivedPacket.getType());
+                
                 synchronized (mux) {
                     base = Math.max(base, receivedPacketSeqNum + 1);
 
@@ -123,7 +126,7 @@ public class sender implements Runnable {
                     
                     throw new RuntimeException("EOT packet received while FileTransmitter is not finished");
                     
-                } else if (receivedPacket.getType() != 1) {
+                } else if (receivedPacket.getType() != 1 && receivedPacket.getType() != 0) {
                     throw new RuntimeException("undefined packet received: type " + receivedPacket.getType());
                 }
             }
@@ -134,7 +137,7 @@ public class sender implements Runnable {
 
         // close monitoring and transmitting socket
         monitoringSocket.close();
-        fileTransmitter.closeTransmitterSocket();
+        fileTransporter.closeTransmitterSocket();
     }
 
     private int getSeqNumFromPacketSeqNum(int packetSeqNum) {
@@ -144,7 +147,7 @@ public class sender implements Runnable {
 
     private boolean shouldFinishMonitoring() {
         synchronized (mux) {
-            return fileTransmitter.getIsFinished() && nextSeqNum == base;
+            return fileTransporter.getIsFinished() && nextSeqNum == base;
         }
     }
 
@@ -174,7 +177,7 @@ public class sender implements Runnable {
         	System.out.println("@unack timertask run(), see how many times it runs");
             for(Map.Entry<Integer, packet> unacknowledgedPacket : unacknowledgedPacketsCache.entrySet()) {
                 try {
-                    fileTransmitter.sendPacket(unacknowledgedPacket.getValue());
+                    fileTransporter.sendPacket(unacknowledgedPacket.getValue());
                 } catch (IOException ex) {
                     System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error " + ex.getMessage());
                 }
@@ -256,6 +259,9 @@ class FileTransmitter {
         DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emuAdd, emuPort);
 
         transmitterSocket.send(sendPacket);
+        
+        // for debug
+        System.out.println("Sender: Packet Sequence " + p.getSeqNum() + "send, type: ");
     }
 
     public void closeTransmitterSocket() {
