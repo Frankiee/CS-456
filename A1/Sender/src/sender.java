@@ -7,6 +7,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Timer;
@@ -96,18 +97,19 @@ public class sender implements Runnable {
 
                 // update base and remove received packets from unacknowledged packets cache
                 int receivedPacketSeqNum = getSeqNumFromPacketSeqNum(receivedPacket.getSeqNum());
+
                 for (int i = base; i <= receivedPacketSeqNum; i++)
                     unacknowledgedPacketsCache.remove(new Integer(i));
 
                 // for debug
-                System.out.println("Sender: Packet Sequence " + receivedPacketSeqNum + "received, type: " + receivedPacket.getType());
+                System.out.println("Sender: Packet Sequence " + receivedPacketSeqNum + " received, type: " + receivedPacket.getType());
                 
                 synchronized (mux) {
                     base = Math.max(base, receivedPacketSeqNum + 1);
 
                     // Update scheduled retransmitting task
                     if (base == nextSeqNum) {
-                    	System.out.println("cancel the task@ run");
+                        System.out.println("cancel the task@ run");
                         retransmitTimer.cancelTask();
                         
                     } else {
@@ -135,14 +137,20 @@ public class sender implements Runnable {
             ex.printStackTrace();
         }
 
-        // close monitoring and transmitting socket
+        // close monitoring, transmitting socket, and retransmitting timer
         monitoringSocket.close();
         fileTransporter.closeTransmitterSocket();
+        retransmitTimer.cancel();
+
+        // for debug
+        System.out.println("sender: EOT packet received from receiver.");
     }
 
     private int getSeqNumFromPacketSeqNum(int packetSeqNum) {
-        int num = base - base % 32 + packetSeqNum;
-        return (num >= base)? num : num + 32;
+        int lowerBound = nextSeqNum - 2 * windowSize;
+
+        int num = lowerBound - lowerBound % 32 + packetSeqNum;
+        return (num >= lowerBound)? num : num + 32;
     }
 
     private boolean shouldFinishMonitoring() {
@@ -151,9 +159,10 @@ public class sender implements Runnable {
         }
     }
 
-    private class UnacknowledgedPacketsRetransmitTimer extends TimerTask {
-        private final int countDownDelay = 1000;
-        private Timer timer = new Timer();
+    private class UnacknowledgedPacketsRetransmitTimer extends Timer {
+        private final int countDownDelay = 100;
+
+        private TimerTask unacknowledgedPacketsRetransmitTimerTask;
 
         public UnacknowledgedPacketsRetransmitTimer() {
             super();
@@ -161,27 +170,32 @@ public class sender implements Runnable {
 
         public void reschedule() {
             cancelTask();
-        	System.out.println("reschedule the task@ reschedule()");
-            timer.schedule(new UnacknowledgedPacketsRetransmitTimer(), countDownDelay);  //Jason
+            
+            unacknowledgedPacketsRetransmitTimerTask = new TimerTask() {
+
+                @Override
+                public void run() {
+                    // resend all unacknowledged packet
+                    for(Map.Entry<Integer, packet> unacknowledgedPacket : unacknowledgedPacketsCache.entrySet()) {
+                        try {
+                            fileTransporter.sendPacket(unacknowledgedPacket.getValue());
+                        } catch (IOException ex) {
+                            System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error " + ex.getMessage());
+                        }
+                    }
+
+                    reschedule();
+                }
+            };
+
+            schedule(unacknowledgedPacketsRetransmitTimerTask, countDownDelay);
         }
 
         public void cancelTask() {
-        	System.out.println("@cancelTask(): canceling1");
-        	cancel();
-            System.out.println("@cancelTask(): canceling2");
-            //timer.cancel();
-        }
-
-        public void run() {
-            // resend all unacknowledged packet
-        	System.out.println("@unack timertask run(), see how many times it runs");
-            for(Map.Entry<Integer, packet> unacknowledgedPacket : unacknowledgedPacketsCache.entrySet()) {
-                try {
-                    fileTransporter.sendPacket(unacknowledgedPacket.getValue());
-                } catch (IOException ex) {
-                    System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error " + ex.getMessage());
-                }
-            }
+            if (unacknowledgedPacketsRetransmitTimerTask != null
+                    && unacknowledgedPacketsRetransmitTimerTask.scheduledExecutionTime() >= 0)
+                unacknowledgedPacketsRetransmitTimerTask.cancel();
+            purge();
         }
     }
 
@@ -231,6 +245,9 @@ public class sender implements Runnable {
         } catch (Exception ex) {
             System.out.println("sender: packet.createPacket: " + ex.getMessage());
         }
+
+        // for debug
+        System.out.println("sender: Exiting.");
     }
 }
 
@@ -242,7 +259,7 @@ class FileTransmitter {
     private DatagramSocket transmitterSocket;
 
     private boolean isFinished = false;
-    private final int fileBufferSize = 500;
+    private final int fileBufferSize = 500 - 4;
     private byte [] fileBuff = new byte [fileBufferSize];
 
     public FileTransmitter (InetAddress emulatorAdd, int emulatorPort, File fileToBeTransferred) throws FileNotFoundException, SocketException {
@@ -255,14 +272,33 @@ class FileTransmitter {
 
     public void sendPacket(packet p) throws IOException {
         // send packet as byte array field of java DatagramPacket
-        byte[] sendData = p.getUDPdata();
+        byte[] sendData = myGetUDPdata(p);
         DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emuAdd, emuPort);
 
         transmitterSocket.send(sendPacket);
         
         // for debug
-        System.out.println("Sender: Packet Sequence " + p.getSeqNum() + "send, type: ");
+//        System.out.println("sender: Packet Sequence " + p.getSeqNum() + " send, type: ");
+//        if (p.getSeqNum() == 3 || p.getSeqNum() == 4) {
+//            System.out.println(p.getSeqNum() + new String (p.getData()) + " \n\n\n\n\n*********\n\n\n\n\n  "+ new String(sendData));
+//        }
     }
+
+    //***************** myGetUDPdata ************************
+    // Fix the size bug from packet.getUDPdata:
+    // in packet.getUDPdata():
+    // buffer.put(data.getBytes(),0,data.length());
+    // function doesn't put full string data into the UDP data
+
+    private byte[] myGetUDPdata(packet p) {
+        ByteBuffer buffer = ByteBuffer.allocate(512);
+        buffer.putInt(p.getType());
+        buffer.putInt(p.getSeqNum());
+        buffer.putInt(p.getData().length);
+        buffer.put(p.getData(),0,p.getData().length);
+        return buffer.array();
+    }
+    // ******************************************************
 
     public void closeTransmitterSocket() {
         transmitterSocket.close();
