@@ -78,7 +78,7 @@ public class sender implements Runnable {
                     fileTransporter.sendPacket(pkt);
 
                     // recording packet number of sent packet in seqnum.log
-                    sendPacketsSeqNumWriter.write(String.format("%c\n", nextSeqNum));
+                    sendPacketsSeqNumWriter.write(String.format("%u\n", nextSeqNum));
 
                     // reset count down timer
                     if (base == nextSeqNum)
@@ -121,11 +121,11 @@ public class sender implements Runnable {
 
                     // Update scheduled retransmitting task
                     if (base == nextSeqNum) {
-                        System.out.println("cancel the task@ run");
+                        // System.out.println("cancel the task@ run");
                         retransmitTimer.cancelTask();
                         
                     } else {
-                    	System.out.println("reschedule the task@ run()");
+                    	// System.out.println("reschedule the task@ run()");
                         retransmitTimer.reschedule();
                         
                     }
@@ -136,7 +136,7 @@ public class sender implements Runnable {
 
                 if (receivedPacket.getType() == 0) {
                     // recording packet number of received ACK packet in ack.log
-                    ackPacketsSeqNumWriter.write(String.format("%c\n", receivedPacketSeqNum));
+                    ackPacketsSeqNumWriter.write(String.format("%u\n", receivedPacketSeqNum));
 
                 } else if (receivedPacket.getType() == 2) {
                     if (shouldFinishMonitoring())
