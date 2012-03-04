@@ -1,6 +1,8 @@
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -11,8 +13,8 @@ import java.net.UnknownHostException;
 /**
  * CS 456 Assignment 1
  *
- * @author Frank Liu
- * Student ID 20327548
+ * @author Weixin Liu, Shuofeng Liu
+ * Student ID 20327548, 20340988
  *
  * Date 2012.2.25
  */
@@ -28,9 +30,14 @@ public class receiver {
     private DatagramSocket monitoringSocket;
     private packet lastSentInOrderACKPacket;
 
-    private receiver (InetAddress emulatorAdd, int emulatorPort, int receiverPort, File fileToWriteTo) throws FileNotFoundException, SocketException {
+    // generating arrival.log files for recording the sequence numbers of all the data packets that the receiver receives
+    private BufferedWriter receivedPacketsSeqNumWriter;
+
+    private receiver (InetAddress emulatorAdd, int emulatorPort, int receiverPort, File fileToWriteTo) 
+            throws FileNotFoundException, SocketException, IOException  {
         emuAdd = emulatorAdd;
         emuPort = emulatorPort;
+        receivedPacketsSeqNumWriter = new BufferedWriter(new FileWriter("arrival.log"));
 
         fileStream = new FileOutputStream(fileToWriteTo);
         monitoringSocket = new DatagramSocket(receiverPort);
@@ -54,12 +61,15 @@ public class receiver {
                 if (expectedSeqNum != 0)
                     sendPacket(lastSentInOrderACKPacket);
             } else {
-            	// for debug
+                // for debug
                 System.out.println("receiver: packet " + rcvPacket.getSeqNum() + " received");
                 
                 if (rcvPacket.getType() == 1) {
                     // update last-sent-in-order ACK packet
                     lastSentInOrderACKPacket = packet.createACK(expectedSeqNum++);
+
+                    // recording packet number of received data packet in ack.log
+                    receivedPacketsSeqNumWriter.write(String.format("%d\n", rcvPacket.getSeqNum()));
 
                     // write received packet to file
                     writePacketToFile (rcvPacket);
@@ -76,6 +86,7 @@ public class receiver {
             }
         }
 
+        receivedPacketsSeqNumWriter.close();
         fileStream.close();
         monitoringSocket.close();
     }
@@ -131,6 +142,11 @@ public class receiver {
             int receiverPort = Integer.parseInt(args[2]);
             File fileToWriteTo = new File(args[3]);
 
+            // create new if give file does not exist
+            if (!fileToWriteTo.exists())
+                fileToWriteTo.createNewFile();
+
+            // throw exception if given file is not writable
             if (!fileToWriteTo.canWrite()) {
                 String str = "receiver: Given file is not writable";
                 throw new RuntimeException(str);
@@ -148,7 +164,7 @@ public class receiver {
         } catch (SocketException ex) {
             System.out.println("receiver: Could not create DatagramSocket (on given port) " + ex.getMessage());
         } catch (IOException ex) {
-            System.out.println("receiver: FileOutputStream: I/O error" + ex.getMessage());
+            System.out.println("receiver: File I/O error" + ex.getMessage());
         } catch (Exception ex) {
             System.out.println("receiver: packet.createPacket: " + ex.getMessage());
         }
