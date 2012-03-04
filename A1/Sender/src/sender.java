@@ -138,7 +138,7 @@ public class sender implements Runnable {
                 if (receivedPacket.getType() == 0) {
                     // recording packet number of received ACK packet in ack.log
                     ackPacketsSeqNumWriter.write(String.format("%d\n", receivedPacketSeqNum));
-                    ackPacketsSeqNUmWriter.flush();
+                    ackPacketsSeqNumWriter.flush();
 
                 } else if (receivedPacket.getType() == 2) {
                     if (shouldFinishMonitoring())
