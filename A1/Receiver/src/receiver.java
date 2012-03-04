@@ -70,6 +70,7 @@ public class receiver {
 
                     // recording packet number of received data packet in ack.log
                     receivedPacketsSeqNumWriter.write(String.format("%d\n", rcvPacket.getSeqNum()));
+                    receivedPacketsSeqNumWriter.flush();
 
                     // write received packet to file
                     writePacketToFile (rcvPacket);
