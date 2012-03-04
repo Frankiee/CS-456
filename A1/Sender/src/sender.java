@@ -79,6 +79,7 @@ public class sender implements Runnable {
 
                     // recording packet number of sent packet in seqnum.log
                     sendPacketsSeqNumWriter.write(String.format("%d\n", nextSeqNum));
+                    sendPacketsSeqNumWriter.flush();
 
                     // reset count down timer
                     if (base == nextSeqNum)
@@ -137,6 +138,7 @@ public class sender implements Runnable {
                 if (receivedPacket.getType() == 0) {
                     // recording packet number of received ACK packet in ack.log
                     ackPacketsSeqNumWriter.write(String.format("%d\n", receivedPacketSeqNum));
+                    ackPacketsSeqNUmWriter.flush();
 
                 } else if (receivedPacket.getType() == 2) {
                     if (shouldFinishMonitoring())
@@ -204,6 +206,8 @@ public class sender implements Runnable {
 
                             // recording packet number of sent packet in seqnum.log
                             sendPacketsSeqNumWriter.write(String.format("%d\n", unacknowledgedPacketSeqNum));
+                            sendPacketsSeqNumWriter.flush();
+                            
                         } catch (IOException ex) {
                             System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error " + ex.getMessage());
                         }
