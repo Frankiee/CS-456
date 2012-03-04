@@ -55,6 +55,12 @@ public class receiver {
 
             checkReceivedPacketValidity(rcvPacket);
 
+            if (rcvPacket.getType() == 1) {
+                // recording packet number of received data packet in ack.log
+                receivedPacketsSeqNumWriter.write(String.format("%d\n", rcvPacket.getSeqNum()));
+                receivedPacketsSeqNumWriter.flush();
+            }
+
             // received unexpected packet
             if (!isReceivingExpectedPacket(rcvPacket)) {
                 // default: (re)send last-sent-in-order ACK packet
@@ -67,10 +73,6 @@ public class receiver {
                 if (rcvPacket.getType() == 1) {
                     // update last-sent-in-order ACK packet
                     lastSentInOrderACKPacket = packet.createACK(expectedSeqNum++);
-
-                    // recording packet number of received data packet in ack.log
-                    receivedPacketsSeqNumWriter.write(String.format("%d\n", rcvPacket.getSeqNum()));
-                    receivedPacketsSeqNumWriter.flush();
 
                     // write received packet to file
                     writePacketToFile (rcvPacket);
