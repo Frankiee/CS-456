@@ -1,6 +1,8 @@
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -8,16 +10,16 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * CS 456 Assignment 1
  *
- * @author Frank Liu
- * Student ID 20327548
+ * @author Weixin Liu, Shuofeng Liu
+ * Student ID 20327548, 20340988
  *
  * Date 2012.2.25
  */
@@ -34,13 +36,20 @@ public class sender implements Runnable {
     private int base = 0;
 
     private DatagramSocket monitoringSocket;
-    private Map<Integer, packet> unacknowledgedPacketsCache = new HashMap<Integer, packet>();
+    private Map<Integer, packet> unacknowledgedPacketsCache = new ConcurrentHashMap<Integer, packet>();
     private UnacknowledgedPacketsRetransmitTimer retransmitTimer = new UnacknowledgedPacketsRetransmitTimer();
 
     private Thread ACKMonitoringThread;
 
-    private sender (FileTransmitter transp, int mtPort) throws SocketException {
+    // generating seqnum.log and ack.log files for testing and grading purpose
+    private BufferedWriter sendPacketsSeqNumWriter;     // for recording packet number of sent packet in seqnum.log
+    private BufferedWriter ackPacketsSeqNumWriter;      // for recording packet number of received ACK packet in ack.log
+
+    private sender (FileTransmitter transp, int mtPort) throws SocketException, IOException {
         fileTransporter = transp;
+
+        sendPacketsSeqNumWriter = new BufferedWriter(new FileWriter("seqnum.log"));
+        ackPacketsSeqNumWriter = new BufferedWriter(new FileWriter("ack.log"));
 
         monitoringSocket = new DatagramSocket(mtPort);
 
@@ -67,6 +76,9 @@ public class sender implements Runnable {
 
                     // send packet
                     fileTransporter.sendPacket(pkt);
+
+                    // recording packet number of sent packet in seqnum.log
+                    sendPacketsSeqNumWriter.write(String.format("%c\n", nextSeqNum));
 
                     // reset count down timer
                     if (base == nextSeqNum)
@@ -102,7 +114,7 @@ public class sender implements Runnable {
                     unacknowledgedPacketsCache.remove(new Integer(i));
 
                 // for debug
-                System.out.println("Sender: Packet Sequence " + receivedPacketSeqNum + " received, type: " + receivedPacket.getType());
+                // System.out.println("Sender: Packet Sequence " + receivedPacketSeqNum + " received, type: " + receivedPacket.getType());
                 
                 synchronized (mux) {
                     base = Math.max(base, receivedPacketSeqNum + 1);
@@ -122,19 +134,29 @@ public class sender implements Runnable {
                     mux.notifyAll();
                 }
 
-                if (receivedPacket.getType() == 2) {
+                if (receivedPacket.getType() == 0) {
+                    // recording packet number of received ACK packet in ack.log
+                    ackPacketsSeqNumWriter.write(String.format("%c\n", receivedPacketSeqNum));
+
+                } else if (receivedPacket.getType() == 2) {
                     if (shouldFinishMonitoring())
                         break;
                     
                     throw new RuntimeException("EOT packet received while FileTransmitter is not finished");
                     
-                } else if (receivedPacket.getType() != 1 && receivedPacket.getType() != 0) {
+                } else if (receivedPacket.getType() != 1) {
                     throw new RuntimeException("undefined packet received: type " + receivedPacket.getType());
                 }
             }
+
+            // close BufferWriter for writing seqnum.log and ack.log
+            sendPacketsSeqNumWriter.close();
+            ackPacketsSeqNumWriter.close();
+
+        } catch (IOException ex) {
+            System.out.println("sender: BufferedWriter: File I/O error" + ex.getMessage()+ "\n");
         } catch (Exception ex) {
             System.out.println("sender: Received packet corrupted:" + ex.getMessage()+ "\n");
-            ex.printStackTrace();
         }
 
         // close monitoring, transmitting socket, and retransmitting timer
@@ -143,7 +165,7 @@ public class sender implements Runnable {
         retransmitTimer.cancel();
 
         // for debug
-        System.out.println("sender: EOT packet received from receiver.");
+        // System.out.println("sender: EOT packet received from receiver.");
     }
 
     private int getSeqNumFromPacketSeqNum(int packetSeqNum) {
@@ -176,9 +198,9 @@ public class sender implements Runnable {
                 @Override
                 public void run() {
                     // resend all unacknowledged packet
-                    for(Map.Entry<Integer, packet> unacknowledgedPacket : unacknowledgedPacketsCache.entrySet()) {
+                    for (int unacknowledgedPacketSeqNum = base; unacknowledgedPacketSeqNum < nextSeqNum; unacknowledgedPacketSeqNum++) {
                         try {
-                            fileTransporter.sendPacket(unacknowledgedPacket.getValue());
+                            fileTransporter.sendPacket(unacknowledgedPacketsCache.get(new Integer(unacknowledgedPacketSeqNum)));
                         } catch (IOException ex) {
                             System.out.println("sender: UnacknowledgedPacketsRetransmitTimer: packet I/O error " + ex.getMessage());
                         }
@@ -219,6 +241,13 @@ public class sender implements Runnable {
             int senderPort = Integer.parseInt(args[2]);
             File fileToBeTransferred = new File(args[3]);
 
+            // throw exception if give file does not exist
+            if (!fileToBeTransferred.exists()) {
+                String str = "sender: Given file does not exist";
+                throw new RuntimeException(str);
+            }
+
+            // throw exception if give file is not readable
             if (!fileToBeTransferred.canRead()) {
                 String str = "sender: Given file is not readable";
                 throw new RuntimeException(str);
@@ -241,7 +270,7 @@ public class sender implements Runnable {
         } catch (SocketException ex) {
             System.out.println("sender: Could not create DatagramSocket (on given port) " + ex.getMessage());
         } catch (IOException ex) {
-            System.out.println("sender: I/O error" + ex.getMessage());
+            System.out.println("sender: File I/O error" + ex.getMessage());
         } catch (Exception ex) {
             System.out.println("sender: packet.createPacket: " + ex.getMessage());
         }
@@ -251,6 +280,7 @@ public class sender implements Runnable {
     }
 }
 
+// FileTransmitter: create and send all the packet to the receiver
 class FileTransmitter {
     private InetAddress emuAdd;         // host address of the network emulator
     private int emuPort;                // UDP port number used by the emulator to receive data from the sender
@@ -270,18 +300,13 @@ class FileTransmitter {
         transmitterSocket = new DatagramSocket();
     }
 
+    // send the given packet to the target
     public void sendPacket(packet p) throws IOException {
         // send packet as byte array field of java DatagramPacket
         byte[] sendData = myGetUDPdata(p);
         DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emuAdd, emuPort);
 
         transmitterSocket.send(sendPacket);
-        
-        // for debug
-//        System.out.println("sender: Packet Sequence " + p.getSeqNum() + " send, type: ");
-//        if (p.getSeqNum() == 3 || p.getSeqNum() == 4) {
-//            System.out.println(p.getSeqNum() + new String (p.getData()) + " \n\n\n\n\n*********\n\n\n\n\n  "+ new String(sendData));
-//        }
     }
 
     //***************** myGetUDPdata ************************
